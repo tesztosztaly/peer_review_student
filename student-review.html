@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Peer Review – Értékelés</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Instrument+Sans:wght@400;500&family=Instrument+Mono&display=swap" rel="stylesheet"/>
+  
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+    import { getAuth, signInWithPopup, GithubAuthProvider, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+    import { getFirestore, collection, query, where, getDocs, addDoc, getDoc, doc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+    import { getStorage, ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
+
+    window.firebaseModules = { initializeApp, getAuth, signInWithPopup, GithubAuthProvider, onAuthStateChanged, signOut, getFirestore, collection, query, where, getDocs, addDoc, getDoc, doc, getStorage, ref, uploadBytes, getDownloadURL };
+  </script>
+
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #14141a;
+      --surface2: #1c1c24;
+      --border: rgba(255,255,255,0.1);
+      --text: #e8e8f0;
+      --text-muted: #70708a;
+      --accent: #7c6aff;
+      --success: #22c55e;
+      --danger: #ef4444;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Instrument Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(ellipse 50% 40% at 30% 20%, rgba(124,106,255,0.08) 0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 700px;
+      width: 100%;
+    }
+
+    /* ── Header ── */
+    .header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    .tag {
+      font-family: 'Instrument Mono', monospace;
+      font-size: 0.68rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 1rem;
+      display: block;
+    }
+    h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #fff 30%, rgba(255,255,255,0.4));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.5rem;
+    }
+    .subtitle {
+      font-size: 0.9rem;
+      color: rgba(232,232,240,0.5);
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2rem;
+      margin-bottom: 1.5rem;
+    }
+
+    /* ── Login screen ── */
+    .login-screen {
+      text-align: center;
+      padding: 3rem 2rem;
+    }
+    .login-icon { font-size: 3rem; margin-bottom: 1.5rem; }
+    .login-screen h2 {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+    .login-screen p { color: rgba(232,232,240,0.5); margin-bottom: 2rem; line-height: 1.6; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.875rem 1.75rem;
+      font-family: 'Syne', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 700;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s, box-shadow 0.15s;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+      box-shadow: 0 4px 20px rgba(124,106,255,0.35);
+    }
+    .btn-primary:hover { box-shadow: 0 6px 28px rgba(124,106,255,0.5); }
+    .btn-secondary {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.05); }
+
+    /* ── User banner ── */
+    .user-banner {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.5rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 2rem;
+    }
+    .user-avatar {
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      border: 2px solid var(--accent);
+    }
+    .user-info { flex: 1; }
+    .user-name {
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 1rem;
+    }
+    .user-login {
+      font-family: 'Instrument Mono', monospace;
+      font-size: 0.75rem;
+      color: rgba(232,232,240,0.45);
+    }
+
+    /* ── Assignment cards ── */
+    .assignments { display: flex; flex-direction: column; gap: 1.25rem; }
+    .assignment-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .assignment-card.completed { border-color: rgba(34,197,94,0.4); }
+    .assignment-head {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+    }
+    .assignment-head h3 {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+    }
+    .assignment-head a {
+      font-family: 'Instrument Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--accent);
+      text-decoration: none;
+      transition: opacity 0.15s;
+    }
+    .assignment-head a:hover { opacity: 0.8; }
+    .assignment-body { padding: 1.5rem; }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-family: 'Instrument Mono', monospace;
+      font-size: 0.7rem;
+      padding: 0.25rem 0.7rem;
+      border-radius: 999px;
+      margin-top: 0.5rem;
+    }
+    .status-badge.pending {
+      background: rgba(245,158,11,0.12);
+      color: #f59e0b;
+      border: 1px solid rgba(245,158,11,0.25);
+    }
+    .status-badge.completed {
+      background: rgba(34,197,94,0.12);
+      color: var(--success);
+      border: 1px solid rgba(34,197,94,0.25);
+    }
+
+    /* ── File upload ── */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      margin-bottom: 1rem;
+    }
+    .upload-zone:hover { border-color: var(--accent); background: rgba(124,106,255,0.05); }
+    .upload-zone input { display: none; }
+    .upload-icon-big { font-size: 2.5rem; margin-bottom: 0.75rem; }
+    .upload-label { font-size: 0.95rem; color: rgba(232,232,240,0.7); }
+
+    .file-preview {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 1rem;
+    }
+    .file-icon { font-size: 1.5rem; }
+    .file-name { flex: 1; font-size: 0.9rem; font-family: 'Instrument Mono', monospace; }
+    .file-remove {
+      background: none;
+      border: none;
+      color: var(--danger);
+      cursor: pointer;
+      font-size: 1.2rem;
+      padding: 0.25rem 0.5rem;
+    }
+
+    .success-msg {
+      padding: 1rem 1.25rem;
+      background: rgba(34,197,94,0.1);
+      border: 1px solid rgba(34,197,94,0.25);
+      border-radius: 8px;
+      color: var(--success);
+      font-size: 0.88rem;
+      margin-top: 1rem;
+    }
+
+    .error-msg {
+      padding: 1rem 1.25rem;
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.25);
+      border-radius: 8px;
+      color: var(--danger);
+      font-size: 0.88rem;
+      margin-top: 1rem;
+    }
+
+    /* ── Received reviews ── */
+    .reviews-section { margin-top: 2rem; }
+    .review-item {
+      padding: 1rem 1.25rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .review-from {
+      font-family: 'Instrument Mono', monospace;
+      font-size: 0.8rem;
+      color: rgba(232,232,240,0.5);
+      flex: 1;
+    }
+    .download-link {
+      font-size: 0.8rem;
+      color: var(--accent);
+      text-decoration: none;
+      padding: 0.3rem 0.7rem;
+      border: 1px solid rgba(124,106,255,0.3);
+      border-radius: 6px;
+      transition: background 0.15s;
+    }
+    .download-link:hover { background: rgba(124,106,255,0.15); }
+
+    .empty-state {
+      text-align: center;
+      padding: 2rem;
+      color: rgba(232,232,240,0.3);
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header class="header">
+    <span class="tag">Peer Review Rendszer</span>
+    <h1>Értékelés</h1>
+    <p class="subtitle">Jelentkezz be GitHub-bal és töltsd fel az értékeléseket</p>
+  </header>
+
+  <!-- Login screen -->
+  <div id="loginScreen" class="card login-screen">
+    <div class="login-icon">🔐</div>
+    <h2>Bejelentkezés szükséges</h2>
+    <p>Kattints a gombra a GitHub-fiókod használatához.</p>
+    <button class="btn btn-primary" onclick="login()">
+      <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub-bal bejelentkezés
+    </button>
+  </div>
+
+  <!-- Main content (hidden until logged in) -->
+  <div id="mainContent" style="display:none">
+    <div class="user-banner">
+      <img id="userAvatar" class="user-avatar" src="" alt=""/>
+      <div class="user-info">
+        <div class="user-name" id="userName"></div>
+        <div class="user-login" id="userLogin"></div>
+      </div>
+      <button class="btn btn-secondary" onclick="logout()">Kilépés</button>
+    </div>
+
+    <div id="assignments" class="assignments"></div>
+    
+    <div class="reviews-section">
+      <h2 style="font-family: Syne; font-size: 1.3rem; margin-bottom: 1rem;">📊 Rólad írt értékelések</h2>
+      <div id="receivedReviews"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  OKTATÓ: FIREBASE CONFIG IDE MÁSOLD BE
+// ═══════════════════════════════════════════════════════════════
+const FIREBASE_CONFIG = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "123456789",
+  appId: "YOUR_APP_ID"
+};
+// ═══════════════════════════════════════════════════════════════
+
+let auth, db, storage, user = null;
+const { initializeApp, getAuth, signInWithPopup, GithubAuthProvider, onAuthStateChanged, signOut, getFirestore, collection, query, where, getDocs, addDoc, getDoc, doc, getStorage, ref, uploadBytes, getDownloadURL } = window.firebaseModules;
+
+// Init Firebase
+const app = initializeApp(FIREBASE_CONFIG);
+auth = getAuth(app);
+db = getFirestore(app);
+storage = getStorage(app);
+
+// Auth state
+onAuthStateChanged(auth, async (u) => {
+  if (u) {
+    user = u;
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('mainContent').style.display = 'block';
+    document.getElementById('userName').textContent = u.displayName || u.email;
+    document.getElementById('userLogin').textContent = '@' + (u.reloadUserInfo?.screenName || 'unknown');
+    document.getElementById('userAvatar').src = u.photoURL || '';
+    
+    await loadAssignments();
+    await loadReceivedReviews();
+  } else {
+    document.getElementById('loginScreen').style.display = 'block';
+    document.getElementById('mainContent').style.display = 'none';
+  }
+});
+
+async function login() {
+  const provider = new GithubAuthProvider();
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (e) {
+    alert('Bejelentkezési hiba: ' + e.message);
+  }
+}
+
+function logout() {
+  signOut(auth);
+}
+
+// Load assignments where current user is reviewer
+async function loadAssignments() {
+  const githubLogin = user.reloadUserInfo?.screenName;
+  if (!githubLogin) return;
+
+  const q = query(collection(db, 'assignments'), where('reviewerLogin', '==', githubLogin));
+  const snap = await getDocs(q);
+
+  const container = document.getElementById('assignments');
+  container.innerHTML = '';
+
+  if (snap.empty) {
+    container.innerHTML = '<div class="empty-state">Nincs értékelési feladatod.</div>';
+    return;
+  }
+
+  snap.forEach(docSnap => {
+    const data = docSnap.data();
+    const card = buildAssignmentCard(docSnap.id, data);
+    container.insertAdjacentHTML('beforeend', card);
+  });
+}
+
+function buildAssignmentCard(assignmentId, data) {
+  const completed = data.status === 'completed';
+  const statusBadge = completed
+    ? '<span class="status-badge completed">✓ Elküldve</span>'
+    : '<span class="status-badge pending">⏳ Függőben</span>';
+
+  return `
+    <div class="assignment-card ${completed ? 'completed' : ''}">
+      <div class="assignment-head">
+        <h3>${data.revieweeName} értékelése</h3>
+        <a href="${data.revieweeRepo}" target="_blank">🔗 ${data.revieweeRepo}</a>
+        ${statusBadge}
+      </div>
+      <div class="assignment-body">
+        ${completed ? `
+          <div class="success-msg">✓ Az értékelés sikeresen feltöltve.</div>
+        ` : `
+          <div class="upload-zone" onclick="document.getElementById('file-${assignmentId}').click()">
+            <input type="file" id="file-${assignmentId}" accept=".xlsx,.xls,.csv" onchange="handleFileSelect(event, '${assignmentId}')"/>
+            <div class="upload-icon-big">📄</div>
+            <div class="upload-label">Kattints vagy húzd ide az értékelő táblázatot (Excel / CSV)</div>
+          </div>
+          <div id="preview-${assignmentId}"></div>
+          <button class="btn btn-primary" id="upload-btn-${assignmentId}" style="display:none; width:100%" onclick="uploadFile('${assignmentId}')">Feltöltés →</button>
+          <div id="msg-${assignmentId}"></div>
+        `}
+      </div>
+    </div>
+  `;
+}
+
+const selectedFiles = {};
+
+function handleFileSelect(event, assignmentId) {
+  const file = event.target.files[0];
+  if (!file) return;
+  selectedFiles[assignmentId] = file;
+
+  const preview = document.getElementById(`preview-${assignmentId}`);
+  preview.innerHTML = `
+    <div class="file-preview">
+      <span class="file-icon">📊</span>
+      <span class="file-name">${file.name}</span>
+      <button class="file-remove" onclick="removeFile('${assignmentId}')">✕</button>
+    </div>
+  `;
+  document.getElementById(`upload-btn-${assignmentId}`).style.display = 'block';
+}
+
+function removeFile(assignmentId) {
+  delete selectedFiles[assignmentId];
+  document.getElementById(`preview-${assignmentId}`).innerHTML = '';
+  document.getElementById(`upload-btn-${assignmentId}`).style.display = 'none';
+  document.getElementById(`file-${assignmentId}`).value = '';
+}
+
+async function uploadFile(assignmentId) {
+  const file = selectedFiles[assignmentId];
+  if (!file) return;
+
+  const btn = document.getElementById(`upload-btn-${assignmentId}`);
+  const msgEl = document.getElementById(`msg-${assignmentId}`);
+  btn.disabled = true;
+  btn.textContent = 'Feltöltés...';
+  msgEl.innerHTML = '';
+
+  try {
+    // Upload to Firebase Storage
+    const storageRef = ref(storage, `reviews/${assignmentId}/${file.name}`);
+    await uploadBytes(storageRef, file);
+    const fileUrl = await getDownloadURL(storageRef);
+
+    // Save review to Firestore
+    await addDoc(collection(db, 'reviews'), {
+      assignmentId: assignmentId,
+      reviewerLogin: user.reloadUserInfo?.screenName,
+      fileUrl: fileUrl,
+      fileName: file.name,
+      submittedAt: new Date().toISOString()
+    });
+
+    // Update assignment status
+    const assignmentRef = doc(db, 'assignments', assignmentId);
+    await updateDoc(assignmentRef, { status: 'completed' });
+
+    msgEl.innerHTML = '<div class="success-msg">✓ Értékelés sikeresen feltöltve!</div>';
+    setTimeout(() => loadAssignments(), 1500);
+
+  } catch (e) {
+    msgEl.innerHTML = `<div class="error-msg">Hiba: ${e.message}</div>`;
+    btn.disabled = false;
+    btn.textContent = 'Feltöltés →';
+  }
+}
+
+// Load reviews where current user is reviewee
+async function loadReceivedReviews() {
+  const githubLogin = user.reloadUserInfo?.screenName;
+  if (!githubLogin) return;
+
+  // Find assignments where I'm the reviewee
+  const q1 = query(collection(db, 'assignments'), where('revieweeLogin', '==', githubLogin));
+  const assignSnap = await getDocs(q1);
+
+  const myAssignmentIds = [];
+  assignSnap.forEach(d => myAssignmentIds.push(d.id));
+
+  if (myAssignmentIds.length === 0) {
+    document.getElementById('receivedReviews').innerHTML = '<div class="empty-state">Még nincs értékelés rólad.</div>';
+    return;
+  }
+
+  // Get reviews for those assignments
+  const reviewsHtml = [];
+  for (const aid of myAssignmentIds) {
+    const q2 = query(collection(db, 'reviews'), where('assignmentId', '==', aid));
+    const reviewSnap = await getDocs(q2);
+    reviewSnap.forEach(rd => {
+      const data = rd.data();
+      reviewsHtml.push(`
+        <div class="review-item">
+          <span class="review-from">Értékelő: @${data.reviewerLogin}</span>
+          <a class="download-link" href="${data.fileUrl}" target="_blank">⬇ ${data.fileName}</a>
+        </div>
+      `);
+    });
+  }
+
+  document.getElementById('receivedReviews').innerHTML = reviewsHtml.length
+    ? reviewsHtml.join('')
+    : '<div class="empty-state">Még nincs értékelés rólad.</div>';
+}
+
+// Missing updateDoc import fix
+async function updateDoc(docRef, data) {
+  const { updateDoc: fbUpdateDoc } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
+  return fbUpdateDoc(docRef, data);
+}
+</script>
+</body>
+</html>
